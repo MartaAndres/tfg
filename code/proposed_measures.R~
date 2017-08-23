@@ -1,0 +1,33 @@
+proposed_cover_size_total <- function(dataset, cover) {
+  if (missing(cover)) {
+    cover <- learn(dataset)
+  }
+  sum(sapply(cover, nrow))/nrow(dataset)
+}
+
+proposed_cover_size_class_max <- function(dataset, cover) {
+  if (missing(cover)) {
+    cover <- learn(dataset)
+  }
+  instances <- table(dataset[length(dataset)])
+  s <- sapply(names(cover), function(n) nrow(cover[[n]])/instances[[n]])
+  max(s)
+}
+
+proposed_cover_size_class_min <- function(dataset, cover) {
+  if (missing(cover)) {
+    cover <- learn(dataset)
+  }
+  instances <- table(dataset[length(dataset)])
+  s <- sapply(names(cover), function(n) nrow(cover[[n]])/instances[[n]])
+  min(s)
+}
+
+proposed_cover_size_class_avg <- function(dataset, cover) {
+  if (missing(cover)) {
+    cover <- learn(dataset)
+  }
+  instances <- table(dataset[length(dataset)])
+  s <- sapply(names(cover), function(n) nrow(cover[[n]])/instances[[n]])
+  sum(s)/length(s)
+}

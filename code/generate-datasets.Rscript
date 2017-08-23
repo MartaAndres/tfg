@@ -1,0 +1,169 @@
+require(caret)
+require(RKEEL)
+require(smotefamily)
+source("code/distance.R")
+
+partitionCV <- function(dataset, k = 5, name,
+                        directory = "datasets/artificial") {
+  folds <- createFolds(1:nrow(dataset), k = k)
+  scv <- lapply(folds, function(f) {
+    list(train=dataset[-f, ], test=dataset[f, ])
+  })
+
+  if (missing(name)) return(scv)
+
+  ## Save to directory
+  dir.create(file.path(directory, name), showWarnings = FALSE, recursive = TRUE)
+  for (i in 1:k) {
+    writeDatFromDataframes(scv[[i]]$train, scv[[i]]$test,
+                           file.path(directory, name,
+                                     paste0(name, "-5cv-", i, "tra.dat")),
+                           file.path(directory, name,
+                                     paste0(name, "-5cv-", i, "tst.dat")))
+  }
+}
+
+saveDataset <- function(dataset, name, directory = "datasets/artificial") {
+  dataset[length(dataset)] <- as.factor(dataset[[length(dataset)]])
+  partitionCV(dataset, name = name, directory = directory)
+  ## Save plot
+  pdf(file.path(directory, name, paste0(name,".pdf")))
+  plot(dataset[-length(dataset)], col = dataset[[length(dataset)]],
+       main = name, asp = 1,
+       cex.lab = 1.5, cex.axis = 1.5, cex.main = 2, pch=19)
+  dev.off()
+  plot(dataset[-length(dataset)], col = dataset[[length(dataset)]],
+       main = name, asp = 1,
+       cex.lab = 1.5, cex.axis = 1.5, cex.main = 2, pch=19)
+}
+
+args <- commandArgs(trailingOnly = TRUE)
+
+## I used seed 28 for tests
+RNGseed <- NULL
+if (length(args) >= 1) {
+  RNGseed <- args[1]
+}
+
+## Directory to save into
+directory <- "datasets/artificial"
+if (length(args) >= 2) {
+  directory <- args[2]
+}
+
+## General parameters
+generate <- list(circle=TRUE, rectangle=TRUE, strip=TRUE, multiclass=TRUE)
+instances <- c(50, 100, 200)
+##instances <- c(200)
+##ratio <- c(0.1, 0.3, 0.5, 0.7, 0.9)
+ratio <- c(0.5)
+overlap <- seq(0,1,length.out=11)
+## overlap <- c(0, 0.5, 1)
+classes <- c(3, 4, 5)
+
+## Save dataset plots to file
+dir.create(directory, showWarnings = FALSE, recursive = TRUE)
+pdf(file.path(directory, "plot_datasets.pdf"))
+
+## Generate "circle" datasets
+if (generate$circle) {
+  opts <- expand.grid(n=instances, p=ratio, o=overlap, c=c(2))
+  apply(opts, 1, function(x) {
+    set.seed(RNGseed)
+
+    ## Overlap from 0,1 to 0.05,-0.20
+    dataset <- sample_generator(n = x["n"], ratio = x["p"], radius = 0.25,
+                                overlap = 0.05-0.25*x["o"], outcast_ratio = 0)
+    name <- paste0("circle_",
+                   paste0(sapply(names(x), function(n)
+                     c(n,x[[n]])), collapse="_"))
+    saveDataset(dataset, name, directory)
+  })
+}
+
+## Generate "rectangle" datasets
+rectangle_overlap <- function(n, overlap, ratio) {
+  d <- data.frame(rbind(cbind(runif(n*ratio, 0, 0.5+overlap),
+                         runif(n*ratio, 0, 1), 1),
+                   cbind(runif(n*(1-ratio), 0.5-overlap, 1),
+                         runif(n*(1-ratio), 0, 1), 2)))
+  d[length(d)] <- c("n","p")[d[[length(d)]]]
+  d
+}
+
+if (generate$rectangle) {
+  opts <- expand.grid(n=instances, p=ratio, o=overlap, c=c(2))
+
+  apply(opts, 1, function(x) {
+    set.seed(RNGseed)
+
+    ## Overlap from 0,1 to 0,0.4
+    dataset <- rectangle_overlap(n = x["n"], ratio = x["p"],
+                                 overlap = 0.4*x["o"])
+    name <- paste0("rectangle_",
+                   paste0(sapply(names(x), function(n)
+                     c(n,x[[n]])), collapse="_"))
+    saveDataset(dataset, name, directory)
+  })
+}
+
+## Generate "strip" datasets
+strip_overlap <- function(n, overlap, ratio) {
+  overlap <- floor(overlap) # Por si acaso
+  width <- 1/(2*overlap)
+  c1 <- runif(n*ratio, 0, 0.5)
+  c1 <- c1+floor(c1/width)*width
+  c2 <- runif(n*(1-ratio), 0, 0.5)
+  c2 <- c2+floor(c2/width)*width+width
+  d <- data.frame(rbind(cbind(c1, runif(n*ratio, 0, 1), 1),
+                        cbind(c2, runif(n*(1-ratio), 0, 1), 2)))
+  d[length(d)] <- c("n","p")[d[[length(d)]]]
+  d
+}
+
+if (generate$strip) {
+  opts <- expand.grid(n=instances, p=ratio, o=overlap, c=c(2))
+
+  apply(opts, 1, function(x) {
+    set.seed(RNGseed)
+
+    ## Overlap from 0,1 to 2,12
+    dataset <- strip_overlap(n = x["n"], ratio = x["p"], overlap = 2+10*x["o"])
+    name <- paste0("strip_",
+                   paste0(sapply(names(x), function(n)
+                     c(n,x[[n]])), collapse="_"))
+    saveDataset(dataset, name, directory)
+  })
+}
+
+## Generate "multiclass" datasets
+multiclass_overlap <- function(n, overlap, classes = 3) {
+  d <- data.frame()
+  for (i in 1:classes) {
+    rho <- sqrt(runif(n/classes, 0, 1+overlap))
+    theta <- 2*i/classes + runif(n/classes, 0, 2/classes)
+    x <- rho*cospi(theta)-overlap*cospi((2*i+1)/classes)
+    y <- rho*sinpi(theta)-overlap*sinpi((2*i+1)/classes)
+    d <- rbind(d, cbind(x,y,i))
+  }
+  d[length(d)] <- paste0("p",1:classes)[d[[length(d)]]]
+  d
+}
+
+if (generate$multiclass) {
+  opts <- expand.grid(n=instances, p=c(0.5), o=overlap, c=classes)
+
+  apply(opts, 1, function(x) {
+    set.seed(RNGseed)
+
+    ## Overlap from 0,1 to 0,0.4
+    dataset <- multiclass_overlap(n = x["n"], overlap = 0.4*x["o"],
+                                  classes = x["c"])
+    name <- paste0(x["c"], "class_",
+                   paste0(sapply(names(x), function(n)
+                     c(n,x[[n]])), collapse="_"))
+    saveDataset(dataset, name, directory)
+  })
+}
+
+dev.off()

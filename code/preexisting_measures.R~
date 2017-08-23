@@ -1,0 +1,17 @@
+## F1 uses average over attributes or max?
+measure_f1_multiclass_avg <- function(dataset) {
+  # Last column is class
+  # Converts nominal to numeric values?
+
+  classes <- split(dataset[-length(dataset)], dataset[length(dataset)])
+  l <- sapply(colnames(dataset)[-length(dataset)], function(a) {
+    m <- mean(dataset[[a]])
+    n <- sum(sapply(classes, function(c) nrow(c)*abs(m-mean(c[[a]]))))
+    d <- sum(sapply(classes, function(c) {
+      m <- mean(c[[a]])
+      sum(sapply(c[[a]], function(x) abs(x-m)))
+      }))
+    n/d
+  })
+  sum(l)/length(l)
+}

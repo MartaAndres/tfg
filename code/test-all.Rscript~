@@ -1,0 +1,134 @@
+options("warn" = 1)
+require(R.utils)
+
+## Set timeout for intensive functions
+args <- commandArgs(trailingOnly = TRUE)
+timeout <- 0
+if (length(args) >= 1) {
+  timeout <- args[1]
+}
+
+
+## Import all other things
+sapply(list.files(path = "code", pattern = "*.R$", full.names = TRUE), source)
+
+## Functions depending on arguments
+functions_dataset <- c("nrow", "length")
+functions_train_test <- c("acc_1nn", "acc_3nn", "acc_5nn")
+functions_cccd <- c("proposed_cover_size_total",
+                    "proposed_cover_size_class_max",
+                    "proposed_cover_size_class_min",
+                    "proposed_cover_size_class_avg")
+
+results <- data.frame()
+tryCatch(results <- suppressWarnings(LoadResults()), error = function(e) {})
+print(results)
+
+datanames <- list.dirs("datasets/overlapping", recursive = FALSE)
+## datanames <- list.dirs("datasets/artificial", recursive = FALSE)
+for (name in datanames) {
+  cat(name, "\n")
+
+  ## Full dataset
+  title <- paste0(name, "_full")
+  cat(" ", title, "\n")
+  d <- lapply(list.files(path = name, pattern = ".*cv-1.*\\.dat$", full.names = TRUE), read.keel)
+  d <- rbind(d[[1]], d[[2]])
+  for (fun in functions_dataset) {
+    cat("    ", fun, "\n")
+    if (title %in% rownames(results) && fun %in% colnames(results) &&
+        !is.na(results[title,fun])) next
+    tryCatch({
+      cat("       Computing...", date(), "\n")
+      r <- do.call(fun, list(d))
+      cat("       Finished\n")
+      results[title, fun] <- r
+    }, interrupt = function(...) {},
+    error = function(e) warning(e))
+
+    SaveResults(results)
+  }
+
+  ## Plot
+  dir.create(file.path("plots", name), showWarnings = FALSE, recursive = TRUE)
+  pdf(file=file.path("plots", name, "dataset.pdf"))
+  plot(d[-length(d)], col=d[, length(d)])
+  dev.off()
+
+
+  ## Train and test (5 folds)
+  for (i in 1:5) {
+    title <- paste0(name, "_", i)
+    cat(" ", title, "\n")
+    d <- lapply(list.files(path = name, pattern = paste0(".*cv-",i,".*\\.dat$"),
+                           full.names = TRUE), read.keel)
+    train <- d[[1]]
+    test <- d[[2]]
+    ## Regular functions over train
+    for (fun in functions_dataset) {
+      cat("    ", fun, "\n")
+      if (title %in% rownames(results) && fun %in% colnames(results) &&
+          !is.na(results[title,fun])) next
+      tryCatch({
+        cat("       Computing...", date(), "\n")
+        r <- do.call(fun, list(train))
+        cat("       Finished\n")
+        results[title, fun] <- r
+      }, interrupt = function(...) {},
+      error = function(e) warning(e))
+
+      SaveResults(results)
+    }
+
+    ## Functions over train and test
+    for (fun in functions_train_test) {
+      cat("    ", fun, "\n")
+      if (title %in% rownames(results) && fun %in% colnames(results) &&
+          !is.na(results[title,fun])) next
+      tryCatch({
+        cat("       Computing...", date(), "\n")
+        r <- do.call(fun, list(train, test))
+        cat("       Finished\n")
+        results[title, fun] <- r
+      }, interrupt = function(...) {},
+      error = function(e) warning(e))
+
+      SaveResults(results)
+    }
+
+    ## Functions using cccd
+    if (!(all(functions_cccd %in% colnames(results)) &&
+          !any(is.na(results[title, functions_cccd])))) {
+      cat("    ", "cccd", "\n")
+      tryCatch(withTimeout({
+        cat("       Computing...", date(), "\n")
+        learned <- NULL
+        learned <- learn(train)
+        cat("       Finished\n")
+      }, timeout = timeout),
+      interrupt = function(...) {},
+      error = function(e) warning(e))
+    }
+    for (fun in functions_cccd) {
+      cat("    ", fun, "\n")
+      if (title %in% rownames(results) && fun %in% colnames(results) &&
+          !is.na(results[title,fun])) next
+      tryCatch({
+        cat("       Computing...", date(), "\n")
+        r <- do.call(fun, list(train, learned))
+        cat("       Finished\n")
+        results[title, fun] <- r
+      }, interrupt = function(...) {},
+      error = function(e) warning(e))
+
+      SaveResults(results)
+    }
+  }
+
+  ## Average over 5cv
+  title <- paste0(name, "_avg")
+  cat(" ", title, "\n")
+  results[title, ] <- sapply(results[sapply(1:5, function(i)
+    paste0(name, "_", i)), ], mean)
+  SaveResults(results)
+}

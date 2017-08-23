@@ -1,0 +1,54 @@
+require(caret)
+require(RKEEL)
+require(smotefamily)
+
+PartitionCV <- function(dataset, k = 5, name,
+                         directory = "datasets/artificial") {
+  folds <- createFolds(1:nrow(dataset), k = k)
+  scv <- lapply(folds, function(f) {
+    list(train=dataset[-f, ], test=dataset[f, ])
+  })
+
+  if (missing(name)) return(scv)
+
+  ## Save to directory
+  dir.create(file.path(directory, name), showWarnings = FALSE, recursive = TRUE)
+  for (i in 1:k) {
+    writeDatFromDataframes(scv[[i]]$train, scv[[i]]$test,
+                           file.path(directory, name,
+                                     paste0(name, "-5cv-", i, "tra.dat")),
+                           file.path(directory, name,
+                                     paste0(name, "-5cv-", i, "tst.dat")))
+  }
+}
+
+args <- commandArgs(trailingOnly = TRUE)
+
+## I used seed 28 for tests
+if (length(args) >= 1) {
+  set.seed(args[1])
+}
+
+## General parameters
+instances <- c(20, 50, 100, 200)
+ratio <- c(0.1, 0.3, 0.5, 0.7, 0.9)
+## Reduce number of datasets
+instances <- c(100)
+ratio <- c(0.5)
+
+## Generate "circle" datasets
+radius <- c(0.15, 0.25, 0.35)
+radius <- c(0.25)
+overlap <- c(-0.15, -0.05, 0.05)
+overlap <- 
+
+opts <- expand.grid(n=instances, p=ratio, r=radius, o=overlap)
+apply(opts, 1, function(x) {
+  dataset <- sample_generator(n = x["n"], ratio = x["p"], radius = x["r"],
+                              overlap = x["o"]) # add outcast = 0
+  name <- paste0("circle_",
+              paste0(sapply(names(x), function(n) c(n,x[[n]])), collapse="_"))
+  PartitionCV(dataset, name = name)
+})
+
+

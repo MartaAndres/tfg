@@ -1,0 +1,155 @@
+options("warn" = 1)
+require(R.utils)
+
+## Set timeout for intensive functions
+args <- commandArgs(trailingOnly = TRUE)
+timeout <- 0
+if (length(args) >= 1) {
+  timeout <- args[1]
+}
+
+
+## Import all source files
+sapply(list.files(path = "code", pattern = "*.R$", full.names = TRUE), source)
+
+## Functions depending on arguments
+functions_dataset <- c(##"nrow", "length",
+  "measure_f1_manhattan",
+  "measure_fisher",
+                       "measure_f1_euclidean")
+                       ##"measure_f1_multiclass_avg")
+functions_train_test <- c("acc_1nn")##, "acc_3nn", "acc_5nn")
+functions_cccd <- c("proposed_cover_size_total",
+                    "proposed_cover_size_class_avg",
+                    "proposed_cover_size_class_max",
+                    ## "proposed_cover_size_class_min",
+                    ## "proposed_points_covered_total",
+                    ## "proposed_points_covered_class_max",
+                    ## "proposed_points_covered_class_min",
+                    ## "proposed_points_covered_class_avg",
+                    "proposed_ball_points_total",
+                    "proposed_ball_points_class_avg",
+                    ## "proposed_ball_points_class_max",
+                    "proposed_ball_points_class_min",
+                    "proposed_ball_radius_total",
+                    "proposed_ball_radius_class_avg",
+                    ## "proposed_ball_radius_class_max",
+                    "proposed_ball_radius_class_min")
+
+results <- data.frame()
+tryCatch(results <- suppressWarnings(loadResults(
+           filename = "results-artificial.txt")), error = print)
+print(nrow(results))
+
+##datanames <- list.dirs("datasets/overlapping", recursive = FALSE)
+datanames <- list.dirs("datasets/artificial", recursive = FALSE)
+for (name in datanames) {
+  cat(name, date(), "\n")
+
+  pars <- c("aggr", "", "type", strsplit(basename(name), "_")[[1]])
+  pars <- lapply(pars, function(x)
+    tryCatch(as.numeric(x), warning = function(...) x))
+
+  ## Train and test (5 folds)
+  for (i in 1:5) {
+    title <- paste0(name, "_", i)
+    cat(" ", title, "\n")
+
+    pars[2] <- i
+    pari <- 1
+    while (pari < length(pars)) {
+      results[title, pars[[pari]]] <- pars[[pari + 1]]
+      pari <- pari+2
+    }
+    saveResults(results, filename = "results-artificial")
+
+    if (all(c(functions_dataset, functions_train_test,
+           functions_cccd) %in% colnames(results)) &&
+        !any(is.na(results[title, c(functions_dataset, functions_train_test,
+                                    functions_cccd)]))) {
+      next
+    }
+    d <- lapply(list.files(path = name, pattern = paste0(".*cv-",i,".*\\.dat$"),
+                           full.names = TRUE), read.keel)
+    train <- d[[1]]
+    test <- d[[2]]
+
+    ## Regular functions over train
+    for (fun in functions_dataset) {
+      if (title %in% rownames(results) && fun %in% colnames(results) &&
+          !is.na(results[title,fun])) next
+      cat("    ", fun, "\n")
+      tryCatch({
+        cat("       Computing...", date(), "\n")
+        r <- do.call(fun, list(train))
+        cat("       Finished\n")
+        results[title, fun] <- r
+      }, interrupt = function(...) {},
+      error = function(e) warning(e))
+
+      saveResults(results, filename = "results-artificial")
+    }
+
+    ## Functions over train and test
+    for (fun in functions_train_test) {
+      if (title %in% rownames(results) && fun %in% colnames(results) &&
+          !is.na(results[title,fun])) next
+      cat("    ", fun, "\n")
+      tryCatch({
+        cat("       Computing...", date(), "\n")
+        r <- do.call(fun, list(train, test))
+        cat("       Finished\n")
+        results[title, fun] <- r
+      }, interrupt = function(...) {},
+      error = function(e) warning(e))
+
+      saveResults(results, filename = "results-artificial")
+    }
+
+    ## Functions using cccd
+    learned <- NULL
+    if (!(all(functions_cccd %in% colnames(results)) &&
+          !any(is.na(results[title, functions_cccd])))) {
+      cat("    ", "cccd", "\n")
+      tryCatch(withTimeout({
+        cat("       Computing...", date(), "\n")
+        learned <- learn(train)
+        cat("       Finished\n")
+      }, timeout = timeout),
+      interrupt = function(...) {},
+      error = function(e) warning(e))
+    }
+    if (is.null(learned))
+      next
+
+    for (fun in functions_cccd) {
+      cat("    ", fun, "\n")
+      if (title %in% rownames(results) && fun %in% colnames(results) &&
+          !is.na(results[title,fun])) next
+      tryCatch({
+        cat("       Computing...", date(), "\n")
+        r <- do.call(fun, list(train, learned))
+        cat("       Finished\n")
+        results[title, fun] <- r
+      }, interrupt = function(...) {},
+      error = function(e) warning(e))
+    }
+  }
+
+  ## Average over 5cv
+  title <- paste0(name, "_avg")
+  cat(" ", title, "\n")
+
+  num_cols <- sapply(results, is.numeric)
+  results[title, num_cols] <- sapply(results[sapply(1:5, function(i)
+    paste0(name, "_", i)), num_cols], mean)
+  saveResults(results, filename = "results-artificial")
+
+  pars[2] <- "avg"
+  pari <- 1
+  while (pari < length(pars)) {
+    results[title, pars[[pari]]] <- pars[[pari + 1]]
+    pari <- pari+2
+  }
+  saveResults(results, filename = "results-artificial")
+}

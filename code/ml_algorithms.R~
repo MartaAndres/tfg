@@ -1,0 +1,13 @@
+require(caret)
+
+## kNN algorithms
+acc_knn <- function(train, test, k = 1) {
+  fit <- knn3(train[-length(train)], train[, length(train)], k = k)
+  p <- predict(fit, test[-length(test)])
+  r <- as.factor(colnames(p)[apply(p, 1, which.max)])
+  sum(r == test[, length(test)])/nrow(test)
+}
+
+acc_1nn <- function(train, test) acc_knn(train,test,1)
+acc_3nn <- function(train, test) acc_knn(train,test,3)
+acc_5nn <- function(train, test) acc_knn(train,test,5)
